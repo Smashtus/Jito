@@ -38,7 +38,9 @@ from jito_protos.searcher import searcher_service_pb2, searcher_service_pb2_grpc
 BLOCK_ENGINE_URL = "https://frankfurt.mainnet.block-engine.jito.wtf:443"
 AUTH_URL = "https://frankfurt.mainnet.block-engine.jito.wtf:443"
 RPC_URL = "https://api.mainnet-beta.solana.com"
-SOL_USD_PRICE_ACCOUNT = PublicKey("Ed25519PythPriceAccForSOLUSD")  # Pyth SOL/USD price
+SOL_USD_PRICE_ACCOUNT = PublicKey.from_string(
+    "J83w4WJZb5tF7rj6vVY3WbDXJ6gwHnhpYkzjX6qT3MrH"
+)  # Pyth SOL/USD price
 KEYPAIR_PATH = "./auth.json"  # Keypair authorized with Jito
 PAIR_ADDRESS = "0x9F5a0AD81Fe7fD5dFb84EE7A0CFb83967359BD90"
 SOL_TOKEN_ADDRESS = "0x570A5D26f7765Ecb712C0924E4De545B89fD43dF"
@@ -124,7 +126,7 @@ async def process_tx(
     pre_amt = int(token_pre.ui_token_amount.amount) if token_pre else 0
     token_delta = (post_amt - pre_amt) / 10 ** decimals
 
-    owner_index = keys.index(PublicKey(token_post.owner))
+    owner_index = keys.index(PublicKey.from_string(token_post.owner))
     sol_pre = sim.value.pre_balances[owner_index]
     sol_post = sim.value.post_balances[owner_index]
     sol_delta = (sol_post - sol_pre) / 10 ** 9
@@ -201,7 +203,7 @@ def main() -> None:
     parser.add_argument("mint", help="Target SPL token mint address")
     args = parser.parse_args()
 
-    target_mint = PublicKey(args.mint)
+    target_mint = PublicKey.from_string(args.mint)
     asyncio.run(stream_mempool(target_mint))
 
 
