@@ -176,11 +176,10 @@ async def stream_mempool(target_mint: PublicKey) -> None:
     await auth_channel.close()
 
     interceptor = AuthInterceptor(token)
-    channel = grpc.aio.secure_channel(
-        BLOCK_ENGINE_URL,
-        grpc.ssl_channel_credentials(),
-        interceptors=(interceptor,),
+    base_channel = grpc.aio.secure_channel(
+        BLOCK_ENGINE_URL, grpc.ssl_channel_credentials()
     )
+    channel = grpc.aio.intercept_channel(base_channel, interceptor)
     stub = searcher_service_pb2_grpc.SearcherServiceStub(channel)
 
     request = searcher_service_pb2.PendingTxSubscriptionRequest(accounts=[])
