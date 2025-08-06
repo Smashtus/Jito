@@ -48,19 +48,6 @@ USDT_TOKEN_ADDRESS = "0x55d398326f99059fF775485246999027B3197955"
 # -----------------------------------------------------------------------------
 
 
-class AuthInterceptor(grpc.aio.ClientInterceptor):
-    """Adds the bearer token to every gRPC call."""
-
-    def __init__(self, token: str):
-        self._token = token
-
-    async def intercept(self, method, request_or_iterator, call_details: grpc.ClientCallDetails):
-        metadata = [] if call_details.metadata is None else list(call_details.metadata)
-        metadata.append(("authorization", f"Bearer {self._token}"))
-        call_details = call_details._replace(metadata=tuple(metadata))
-        return await method(request_or_iterator, call_details)
-
-
 async def fetch_auth_token(auth_channel: grpc.aio.Channel, kp: Keypair) -> str:
     """Request JWT token from the auth service."""
     stub = auth_service_pb2_grpc.AuthServiceStub(auth_channel)
@@ -175,11 +162,11 @@ async def stream_mempool(target_mint: PublicKey) -> None:
     token = await fetch_auth_token(auth_channel, kp)
     await auth_channel.close()
 
-    interceptor = AuthInterceptor(token)
-    base_channel = grpc.aio.secure_channel(
-        BLOCK_ENGINE_URL, grpc.ssl_channel_credentials()
+    call_credentials = grpc.access_token_call_credentials(token)
+    credentials = grpc.composite_channel_credentials(
+        grpc.ssl_channel_credentials(), call_credentials
     )
-    channel = grpc.aio.intercept_channel(base_channel, interceptor)
+    channel = grpc.aio.secure_channel(BLOCK_ENGINE_URL, credentials)
     stub = searcher_service_pb2_grpc.SearcherServiceStub(channel)
 
     request = searcher_service_pb2.PendingTxSubscriptionRequest(accounts=[])
