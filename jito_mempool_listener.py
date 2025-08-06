@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import grpc
+import logging
 from rich.console import Console
 from rich.table import Table
 
@@ -146,6 +147,9 @@ async def process_tx(
     )
 
 
+logger = logging.getLogger(__name__)
+
+
 async def stream_mempool(target_mint: PublicKey) -> None:
     if not os.path.exists(KEYPAIR_PATH):
         kp = Keypair()
@@ -157,8 +161,10 @@ async def stream_mempool(target_mint: PublicKey) -> None:
         print(f"Using existing keypair at {KEYPAIR_PATH}")
     rpc = AsyncClient(RPC_URL)
     sol_price = await fetch_sol_price()
+    logger.debug("Fetched SOL price: %s", sol_price)
 
     auth_channel = grpc.aio.secure_channel(AUTH_URL, grpc.ssl_channel_credentials())
+    logger.debug("Requesting auth token")
     token = await fetch_auth_token(auth_channel, kp)
     await auth_channel.close()
 
@@ -167,6 +173,7 @@ async def stream_mempool(target_mint: PublicKey) -> None:
         grpc.ssl_channel_credentials(), call_credentials
     )
     channel = grpc.aio.secure_channel(BLOCK_ENGINE_URL, credentials)
+    logger.debug("Connecting to block engine at %s", BLOCK_ENGINE_URL)
     stub = searcher_service_pb2_grpc.SearcherServiceStub(channel)
 
     request = searcher_service_pb2.PendingTxSubscriptionRequest(accounts=[])
@@ -176,28 +183,41 @@ async def stream_mempool(target_mint: PublicKey) -> None:
         "Time", "Side", "SOL In/Out", "Token In/Out", "Price (SOL)", "Price (USD)", "Tx Hash"
     )
 
-    async for notification in stub.SubscribePendingTransactions(request):
-        for packet in notification.transactions:
-            tx = VersionedTransaction.from_bytes(packet.data)
-            row = await process_tx(tx, rpc, target_mint, sol_price)
-            if row:
-                table.add_row(
-                    row.time,
-                    row.side,
-                    f"{row.sol:.6f}",
-                    f"{row.token:.4f}",
-                    f"{row.price_sol:.8f}",
-                    f"${row.price_usd:.5f}",
-                    row.sig,
-                )
-                console.print(table)
-                table.rows.clear()
+    try:
+        async for notification in stub.SubscribePendingTransactions(request):
+            for packet in notification.transactions:
+                tx = VersionedTransaction.from_bytes(packet.data)
+                row = await process_tx(tx, rpc, target_mint, sol_price)
+                if row:
+                    table.add_row(
+                        row.time,
+                        row.side,
+                        f"{row.sol:.6f}",
+                        f"{row.token:.4f}",
+                        f"{row.price_sol:.8f}",
+                        f"${row.price_usd:.5f}",
+                        row.sig,
+                    )
+                    console.print(table)
+                    table.rows.clear()
+    except Exception:  # pragma: no cover - debug aid
+        logger.exception("Mempool stream terminated")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Listen to Jito mempool for a token mint")
+    parser = argparse.ArgumentParser(
+        description="Listen to Jito mempool for a token mint"
+    )
     parser.add_argument("mint", help="Target SPL token mint address")
+    parser.add_argument(
+        "--debug", action="store_true", help="Enable verbose debug logging"
+    )
     args = parser.parse_args()
+
+    logging.basicConfig(
+        level=logging.DEBUG if args.debug else logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
 
     target_mint = PublicKey.from_string(args.mint)
     asyncio.run(stream_mempool(target_mint))
