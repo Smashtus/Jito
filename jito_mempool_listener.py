@@ -2,8 +2,9 @@
 """Jito mempool SPL-token listener.
 
 Streams pending transactions from Jito’s block engine and prints
-Dexscreener-style buy/sell flow for a chosen SPL token mint. The mint
-address is passed as the first command line argument::
+Dexscreener-style buy/sell flow for a chosen SPL token mint using the
+official ``jito_searcher_client`` library. The mint address is passed as
+the first command line argument::
 
     python jito_mempool_listener.py <MINT_ADDRESS>
 """
@@ -16,7 +17,6 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
-import grpc
 import logging
 from rich.console import Console
 from rich.table import Table
@@ -24,22 +24,22 @@ from rich.table import Table
 # --- Modern Solana SDK imports ---
 from solders.pubkey import Pubkey as PublicKey
 from solders.keypair import Keypair
-from solders.message import Message
-from solders.signature import Signature
 from solders.transaction import VersionedTransaction
 from solana.rpc.async_api import AsyncClient
 
 import os
 
-# Jito protobuf stubs (generated from jito_protos)
-from jito_protos.auth import auth_service_pb2, auth_service_pb2_grpc
-from jito_protos.searcher import searcher_service_pb2, searcher_service_pb2_grpc
+# Official client handles authentication and gRPC streaming
+from jito_searcher_client import get_async_searcher_client
+from jito_searcher_client.generated.searcher_pb2 import (
+    PendingTxSubscriptionRequest,
+)
 
 # -----------------------------------------------------------------------------
 # Configuration – update with your own values
 # -----------------------------------------------------------------------------
-BLOCK_ENGINE_URL = "https://frankfurt.mainnet.block-engine.jito.wtf:443"
-AUTH_URL = "https://frankfurt.mainnet.block-engine.jito.wtf:443"
+# Block engine host (region-specific). ``jito_searcher_client`` handles TLS and auth.
+BLOCK_ENGINE_HOST = "frankfurt.mainnet.block-engine.jito.wtf"
 RPC_URL = "https://api.mainnet-beta.solana.com"
 # Pyth SOL/USD price account. ``pythclient`` expects plain base58 strings for
 # account keys, so keep this as ``str`` rather than a ``solders`` ``PublicKey``.
@@ -49,33 +49,6 @@ PAIR_ADDRESS = "0x9F5a0AD81Fe7fD5dFb84EE7A0CFb83967359BD90"
 SOL_TOKEN_ADDRESS = "0x570A5D26f7765Ecb712C0924E4De545B89fD43dF"
 USDT_TOKEN_ADDRESS = "0x55d398326f99059fF775485246999027B3197955"
 # -----------------------------------------------------------------------------
-
-
-async def fetch_auth_token(auth_channel: grpc.aio.Channel, kp: Keypair) -> str:
-    """Request a JWT token from the auth service.
-
-    The real Jito authentication flow involves first requesting a challenge,
-    signing it with the client's keypair and then exchanging the signature for
-    a token.  The lightweight protobuf stubs bundled with this repository do
-    not implement ``GenerateAuthChallenge`` so we mimic the flow by signing an
-    empty message and calling :meth:`GenerateAuthToken` directly.  The stub
-    returns a dummy token which is sufficient for running the examples.
-    """
-    stub = auth_service_pb2_grpc.AuthServiceStub(auth_channel)
-
-    # Sign an empty message – the dummy auth service ignores the contents but
-    # expects some bytes for the signature field.
-    signature: Signature = kp.sign_message(b"")
-
-    token_resp = await stub.GenerateAuthToken(
-        auth_service_pb2.GenerateAuthTokenRequest(
-            role=auth_service_pb2.Role.SEARCHER,
-            pubkey=bytes(kp.pubkey()),
-            signature=bytes(signature),
-        )
-    )
-
-    return token_resp.token
 
 
 async def fetch_sol_price() -> float:
@@ -180,20 +153,10 @@ async def stream_mempool(target_mint: PublicKey) -> None:
     sol_price = await fetch_sol_price()
     logger.debug("Fetched SOL price: %s", sol_price)
 
-    auth_channel = grpc.aio.secure_channel(AUTH_URL, grpc.ssl_channel_credentials())
-    logger.debug("Requesting auth token")
-    token = await fetch_auth_token(auth_channel, kp)
-    await auth_channel.close()
+    logger.debug("Connecting to block engine at %s", BLOCK_ENGINE_HOST)
+    client = await get_async_searcher_client(BLOCK_ENGINE_HOST, kp)
 
-    call_credentials = grpc.access_token_call_credentials(token)
-    credentials = grpc.composite_channel_credentials(
-        grpc.ssl_channel_credentials(), call_credentials
-    )
-    channel = grpc.aio.secure_channel(BLOCK_ENGINE_URL, credentials)
-    logger.debug("Connecting to block engine at %s", BLOCK_ENGINE_URL)
-    stub = searcher_service_pb2_grpc.SearcherServiceStub(channel)
-
-    request = searcher_service_pb2.PendingTxSubscriptionRequest(accounts=[])
+    request = PendingTxSubscriptionRequest(accounts=[])
 
     console = Console()
     table = Table(
@@ -201,7 +164,7 @@ async def stream_mempool(target_mint: PublicKey) -> None:
     )
 
     try:
-        async for notification in stub.SubscribePendingTransactions(request):
+        async for notification in client.SubscribePendingTransactions(request):
             for packet in notification.transactions:
                 tx = VersionedTransaction.from_bytes(packet.data)
                 row = await process_tx(tx, rpc, target_mint, sol_price)
