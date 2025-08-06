@@ -74,17 +74,27 @@ async def fetch_auth_token(auth_channel: grpc.aio.Channel, kp: Keypair) -> str:
 
 
 async def fetch_sol_price() -> float:
-    """Fetch SOL/USD price from Pyth."""
-    from pythclient.solana import SolanaClient
-    from pythclient.pythclient import PythClient
+    """Fetch SOL/USD price from a public API.
 
-    client = PythClient(
-        first_mapping_account_key=SOL_USD_PRICE_ACCOUNT,
-        solana_client=SolanaClient(endpoint=RPC_URL),
-    )
-    await client.refresh_all_prices()
-    price = client.get_price(SOL_USD_PRICE_ACCOUNT).price
-    return price
+    The original implementation used ``pythclient`` to query the on-chain Pyth
+    price account, but ``pythclient`` is not always available in all
+    environments.  In addition, recent versions of the library removed the
+    ``get_price`` helper which caused an ``AttributeError`` at runtime.  To
+    avoid depending on a heavy Solana client we fetch the price from a simple
+    HTTPS endpoint instead.  If the request fails for any reason we default to
+    ``0.0`` so the caller can decide how to handle missing price data.
+    """
+
+    import aiohttp
+
+    url = "https://api.binance.com/api/v3/ticker/price?symbol=SOLUSDT"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=5) as resp:
+                data = await resp.json()
+                return float(data.get("price", 0.0))
+    except Exception:
+        return 0.0
 
 
 @dataclass
