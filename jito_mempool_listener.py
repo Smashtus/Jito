@@ -80,7 +80,7 @@ async def fetch_sol_price() -> float:
 
     client = PythClient(
         first_mapping_account_key=SOL_USD_PRICE_ACCOUNT,
-        solana_client=SolanaClient(RPC_URL),
+        solana_client=SolanaClient(endpoint=RPC_URL),
     )
     await client.refresh_all_prices()
     price = client.get_price(SOL_USD_PRICE_ACCOUNT).price
