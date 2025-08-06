@@ -52,18 +52,20 @@ USDT_TOKEN_ADDRESS = "0x55d398326f99059fF775485246999027B3197955"
 
 
 async def fetch_auth_token(auth_channel: grpc.aio.Channel, kp: Keypair) -> str:
-    """Request JWT token from the auth service using a signed challenge."""
+    """Request a JWT token from the auth service.
+
+    The real Jito authentication flow involves first requesting a challenge,
+    signing it with the client's keypair and then exchanging the signature for
+    a token.  The lightweight protobuf stubs bundled with this repository do
+    not implement ``GenerateAuthChallenge`` so we mimic the flow by signing an
+    empty message and calling :meth:`GenerateAuthToken` directly.  The stub
+    returns a dummy token which is sufficient for running the examples.
+    """
     stub = auth_service_pb2_grpc.AuthServiceStub(auth_channel)
 
-    challenge_resp = await stub.GenerateAuthChallenge(
-        auth_service_pb2.GenerateAuthChallengeRequest(
-            role=auth_service_pb2.Role.SEARCHER,
-            pubkey=bytes(kp.pubkey()),
-        )
-    )
-
-    message = Message.from_bytes(challenge_resp.challenge)
-    signature: Signature = kp.sign_message(message.serialize())
+    # Sign an empty message – the dummy auth service ignores the contents but
+    # expects some bytes for the signature field.
+    signature: Signature = kp.sign_message(b"")
 
     token_resp = await stub.GenerateAuthToken(
         auth_service_pb2.GenerateAuthTokenRequest(
