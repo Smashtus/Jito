@@ -24,6 +24,8 @@ from rich.table import Table
 # --- Modern Solana SDK imports ---
 from solders.pubkey import Pubkey as PublicKey
 from solders.keypair import Keypair
+from solders.message import Message
+from solders.signature import Signature
 from solders.transaction import VersionedTransaction
 from solana.rpc.async_api import AsyncClient
 
@@ -50,15 +52,28 @@ USDT_TOKEN_ADDRESS = "0x55d398326f99059fF775485246999027B3197955"
 
 
 async def fetch_auth_token(auth_channel: grpc.aio.Channel, kp: Keypair) -> str:
-    """Request JWT token from the auth service."""
+    """Request JWT token from the auth service using a signed challenge."""
     stub = auth_service_pb2_grpc.AuthServiceStub(auth_channel)
-    req = auth_service_pb2.GenerateAuthTokenRequest(
-        role=auth_service_pb2.Role.Value("SEARCHER"),
-        pubkey=bytes(kp.pubkey()),
-        signature=b"",
+
+    challenge_resp = await stub.GenerateAuthChallenge(
+        auth_service_pb2.GenerateAuthChallengeRequest(
+            role=auth_service_pb2.Role.SEARCHER,
+            pubkey=bytes(kp.pubkey()),
+        )
     )
-    resp = await stub.GenerateAuthToken(req)
-    return resp.token
+
+    message = Message.from_bytes(challenge_resp.challenge)
+    signature: Signature = kp.sign_message(message.serialize())
+
+    token_resp = await stub.GenerateAuthToken(
+        auth_service_pb2.GenerateAuthTokenRequest(
+            role=auth_service_pb2.Role.SEARCHER,
+            pubkey=bytes(kp.pubkey()),
+            signature=bytes(signature),
+        )
+    )
+
+    return token_resp.token
 
 
 async def fetch_sol_price() -> float:
@@ -200,8 +215,9 @@ async def stream_mempool(target_mint: PublicKey) -> None:
                     )
                     console.print(table)
                     table.rows.clear()
-    except Exception:  # pragma: no cover - debug aid
-        logger.exception("Mempool stream terminated")
+    except Exception as e:  # pragma: no cover - debug aid
+        logger.exception(f"Mempool stream terminated: {e}")
+        raise
 
 
 def main() -> None:
