@@ -24,6 +24,7 @@ from solana.publickey import PublicKey
 from solana.rpc.async_api import AsyncClient
 from solana.transaction import VersionedTransaction
 from solders.keypair import Keypair
+import os
 
 # Jito protobuf stubs (generated from jito_protos)
 from jito_protos.auth import auth_service_pb2, auth_service_pb2_grpc
@@ -37,6 +38,9 @@ AUTH_URL = "https://frankfurt.mainnet.block-engine.jito.wtf:443"
 RPC_URL = "https://api.mainnet-beta.solana.com"
 SOL_USD_PRICE_ACCOUNT = PublicKey("Ed25519PythPriceAccForSOLUSD")  # Pyth SOL/USD price
 KEYPAIR_PATH = "./auth.json"  # Keypair authorized with Jito
+PAIR_ADDRESS = "0x9F5a0AD81Fe7fD5dFb84EE7A0CFb83967359BD90"
+SOL_TOKEN_ADDRESS = "0x570A5D26f7765Ecb712C0924E4De545B89fD43dF"
+USDT_TOKEN_ADDRESS = "0x55d398326f99059fF775485246999027B3197955"
 # -----------------------------------------------------------------------------
 
 
@@ -142,7 +146,14 @@ async def process_tx(
 
 
 async def stream_mempool(target_mint: PublicKey) -> None:
-    kp = Keypair.from_bytes(open(KEYPAIR_PATH, "rb").read())
+    if not os.path.exists(KEYPAIR_PATH):
+        kp = Keypair()
+        with open(KEYPAIR_PATH, "wb") as f:
+            f.write(kp.to_bytes())
+        print(f"Generated new keypair and stored at {KEYPAIR_PATH}")
+    else:
+        kp = Keypair.from_bytes(open(KEYPAIR_PATH, "rb").read())
+        print(f"Using existing keypair at {KEYPAIR_PATH}")
     rpc = AsyncClient(RPC_URL)
     sol_price = await fetch_sol_price()
 
