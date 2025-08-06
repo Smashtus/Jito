@@ -12,18 +12,20 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import base64
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Dict, Optional
+from typing import Optional
 
 import grpc
 from rich.console import Console
 from rich.table import Table
-from solana.publickey import PublicKey
-from solana.rpc.async_api import AsyncClient
-from solana.transaction import VersionedTransaction
+
+# --- Modern Solana SDK imports ---
+from solders.pubkey import Pubkey as PublicKey
 from solders.keypair import Keypair
+from solders.transaction import VersionedTransaction
+from solana.rpc.async_api import AsyncClient
+
 import os
 
 # Jito protobuf stubs (generated from jito_protos)
