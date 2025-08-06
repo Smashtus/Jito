@@ -1,0 +1,2 @@
+"""Searcher service protobuf stubs."""
+
