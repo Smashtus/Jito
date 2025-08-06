@@ -38,9 +38,9 @@ from jito_protos.searcher import searcher_service_pb2, searcher_service_pb2_grpc
 BLOCK_ENGINE_URL = "https://frankfurt.mainnet.block-engine.jito.wtf:443"
 AUTH_URL = "https://frankfurt.mainnet.block-engine.jito.wtf:443"
 RPC_URL = "https://api.mainnet-beta.solana.com"
-SOL_USD_PRICE_ACCOUNT = PublicKey.from_string(
-    "J83w4WJZb5tF7rj6vVY3WbDXJ6gwHnhpYkzjX6qT3MrH"
-)  # Pyth SOL/USD price
+# Pyth SOL/USD price account. ``pythclient`` expects plain base58 strings for
+# account keys, so keep this as ``str`` rather than a ``solders`` ``PublicKey``.
+SOL_USD_PRICE_ACCOUNT = "J83w4WJZb5tF7rj6vVY3WbDXJ6gwHnhpYkzjX6qT3MrH"
 KEYPAIR_PATH = "./auth.json"  # Keypair authorized with Jito
 PAIR_ADDRESS = "0x9F5a0AD81Fe7fD5dFb84EE7A0CFb83967359BD90"
 SOL_TOKEN_ADDRESS = "0x570A5D26f7765Ecb712C0924E4De545B89fD43dF"
